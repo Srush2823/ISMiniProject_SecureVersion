@@ -125,12 +125,39 @@ def user_dashboard():
     return render_template('user_dashboard.html')
 
 @app.route('/report', methods=['GET', 'POST'])
+# def report():
+#     if 'user_id' not in session:
+#         return redirect(url_for('user_login'))
+#     if request.method == 'POST':
+#         location = escape(request.form['location'])
+#         description = escape(request.form['description'])
+#         file = request.files.get('image')
+#         filename = None
+#         if file and file.filename:
+#             filename = secure_filename(file.filename)
+#             file.save(os.path.join(UPLOAD_FOLDER, filename))
+#         conn = sqlite3.connect('site_data.db')
+#         cursor = conn.cursor()
+#         cursor.execute("INSERT INTO issues (user_id, location, description, image_path) VALUES (?, ?, ?, ?)",
+#                        (session['user_id'], location, description, filename))
+#         conn.commit()
+#         conn.close()
+#         return redirect(url_for('user_dashboard'))
+#     return render_template('report_issue.html')
+
 def report():
     if 'user_id' not in session:
         return redirect(url_for('user_login'))
+    
+        
     if request.method == 'POST':
-        location = escape(request.form['location'])
-        description = escape(request.form['description'])
+
+        isPriorityIssue = request.form.get('isPriorityIssue')=='on'
+
+        
+        
+        location = request.form['location']
+        description = request.form['description']
         file = request.files.get('image')
         filename = None
         if file and file.filename:
@@ -139,11 +166,18 @@ def report():
         conn = sqlite3.connect('site_data.db')
         cursor = conn.cursor()
         cursor.execute("INSERT INTO issues (user_id, location, description, image_path) VALUES (?, ?, ?, ?)",
-                       (session['user_id'], location, description, filename))
+                    (session['user_id'], location, description, filename))
         conn.commit()
         conn.close()
+
+        if isPriorityIssue: 
+            return redirect(url_for('pay'))
+        
         return redirect(url_for('user_dashboard'))
+        
+
     return render_template('report_issue.html')
+
 
 @app.route('/my_issues', methods=['GET'])
 def my_issues():
@@ -233,6 +267,84 @@ def feedback():
         return redirect(url_for('user_login'))
 
     return render_template('feedback.html')
+
+from markupsafe import escape  # ✅ Correct
+
+
+@app.route('/pay')
+def pay():
+    if 'user_id' not in session:
+        return redirect(url_for('user_login'))
+    conn = sqlite3.connect('site_data.db')
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT location, description, image_path FROM issues
+        WHERE user_id = ? ORDER BY id DESC LIMIT 1
+    """, (session['user_id'],))
+    issue = cursor.fetchone()
+    conn.close()
+    if issue:
+        # Escape each field
+        issue = (
+            escape(issue[0]),
+            escape(issue[1]),
+            escape(issue[2])
+        )
+    return render_template('payment_Page.html', issue=issue)
+
+@app.route('/process_payment', methods=['POST'])
+def process_payment():
+    # Simulate processing (In real apps, use a secure payment gateway)
+    card_number = request.form['card_number']
+    name = request.form['name']
+    expiry = request.form['expiry']
+    cvv = request.form['cvv']
+
+    # Print just for debug (do NOT do this in production!)
+    print(f"Received payment details: {card_number}, {name}, {expiry}, {cvv}")
+    
+    # Redirect to a payment success page
+    return redirect(url_for('payment_success'))
+
+@app.route('/payment_success')
+def payment_success():
+    return render_template('payment_success.html')
+
+@app.route('/delete_feedback/<int:feedback_id>', methods=['POST'])
+def delete_feedback(feedback_id):
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+    
+    conn = sqlite3.connect('site_data.db')
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM feedback WHERE id = ?", (feedback_id,))
+    conn.commit()
+    conn.close()
+    
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/delete_issue/<int:issue_id>', methods=['POST'])
+def delete_issue(issue_id):
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+    
+    conn = sqlite3.connect('site_data.db')
+    cursor = conn.cursor()
+    
+    # ✅ Fixed here
+    cursor.execute("SELECT image_path FROM issues WHERE id = ?", (issue_id,))
+    result = cursor.fetchone()
+    if result and result[0]:
+        image_path = os.path.join('static', 'uploads', result[0])
+        if os.path.exists(image_path):
+            os.remove(image_path)
+    
+    cursor.execute("DELETE FROM issues WHERE id = ?", (issue_id,))
+    conn.commit()
+    conn.close()
+
+    return redirect(url_for('admin_dashboard'))
+
 
 @app.route('/logout')
 def logout():
